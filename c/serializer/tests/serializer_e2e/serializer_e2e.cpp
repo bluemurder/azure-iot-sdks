@@ -86,7 +86,7 @@ EXECUTE_COMMAND_RESULT dataMacroCallback(deviceModel* device, ascii_char_ptr pro
             {
                 g_recvMacroData->wasFound = true;
             }
-            (void)Unlock(expectedData->lock);
+            (void)Unlock(g_recvMacroData->lock);
         }
     }
     return EXECUTE_COMMAND_SUCCESS;
