@@ -449,11 +449,12 @@ BEGIN_TEST_SUITE(serializer_e2e)
         }
     }
 
-    TEST_FUNCTION(IoTClient_AMQP_AmqpMacroRecv_e2e)
+    TEST_FUNCTION(IoTClient_AMQP_MacroRecv_e2e)
     {
         // arrange
         IOTHUB_CLIENT_CONFIG iotHubConfig = { 0 };
         IOTHUB_CLIENT_HANDLE iotHubClientHandle;
+        bool continue_run;
 
         // act
         iotHubConfig.iotHubName = IoTHubAccount_GetIoTHubName(g_iothubAcctInfo);
@@ -488,17 +489,26 @@ BEGIN_TEST_SUITE(serializer_e2e)
         ASSERT_ARE_EQUAL(IOTHUB_CLIENT_RESULT, IOTHUB_CLIENT_OK, setMessageResult);
 
         beginOperation = time(NULL);
+        continue_run = true;
         while (
-              (
-                  (nowTime = time(NULL)),
-                  (difftime(nowTime, beginOperation) < MAX_CLOUD_TRAVEL_TIME) //time box
-              ) &&
-                  (!g_recvMacroData->wasFound) //condition box
-              )
+            ( (nowTime = time(NULL)),
+            (difftime(nowTime, beginOperation) < MAX_CLOUD_TRAVEL_TIME) ) &&
+            continue_run)
         {
+            if (Lock(g_recvMacroData->lock) != LOCK_OK)
+            {
+                ASSERT_FAIL("unable to lock macro not found");
+            }
+            else
+            {
+                if (g_recvMacroData->wasFound)
+                {
+                    continue_run = false;
+                }
+                (void)Unlock(g_recvMacroData->lock);
+            }
             ThreadAPI_Sleep(100);
         }
-
         // assert
         ASSERT_IS_TRUE(g_recvMacroData->wasFound);
 
@@ -515,7 +525,7 @@ BEGIN_TEST_SUITE(serializer_e2e)
         IOTHUB_CLIENT_HANDLE iotHubClientHandle;
         deviceModel* devModel;
         time_t beginOperation, nowTime;
-        bool continue_run = true;
+        bool continue_run;
 
         iotHubConfig.iotHubName = IoTHubAccount_GetIoTHubName(g_iothubAcctInfo);
         iotHubConfig.iotHubSuffix = IoTHubAccount_GetIoTHubSuffix(g_iothubAcctInfo);
@@ -564,7 +574,7 @@ BEGIN_TEST_SUITE(serializer_e2e)
             {
                 if (Lock(expectedData->lock) != LOCK_OK)
                 {
-                    ASSERT_FAIL("unable to lock");
+                    ASSERT_FAIL("unable to lock data was sent");
                 }
                 else
                 {
@@ -599,9 +609,9 @@ BEGIN_TEST_SUITE(serializer_e2e)
             (difftime(nowTime, beginOperation) < MAX_CLOUD_TRAVEL_TIME) ) && //time box
             continue_run)
         {
-            if (expectedData->lock)
+            if (Lock(expectedData->lock) != LOCK_OK)
             {
-                ASSERT_FAIL("unable to lock");
+                ASSERT_FAIL("unable to lock found data");
             }
             else
             {
