@@ -129,35 +129,51 @@ BEGIN_TEST_SUITE(serializer_e2e)
     {
         (void)result;
         EXPECTED_SEND_DATA* expectedData = (EXPECTED_SEND_DATA*)userContextCallback;
-        if (expectedData != NULL)
+        if (Lock(expectedData->lock) != LOCK_OK)
         {
-            expectedData->dataWasSent = true;
+            ASSERT_FAIL("unable to lock");
         }
-        printf("was sent: %s\n", expectedData->expectedString);
+        else
+        {
+            if (expectedData != NULL)
+            {
+                expectedData->dataWasSent = true;
+            }
+            (void)Unlock(expectedData->lock);
+            //printf("was sent: %s\n", expectedData->expectedString);
+        }
     }
 
     static int IoTHubCallback(void* context, const char* data, size_t size)
     {
         int result = 0; // 0 means "keep processing"
         EXPECTED_SEND_DATA* expectedData = (EXPECTED_SEND_DATA*)context;
-        printf("Received: %*.*s\n", (int)size, (int)size, data);
+        //printf("Received: %*.*s\n", (int)size, (int)size, data);
         if (expectedData != NULL)
         {
-            if (size != strlen(expectedData->expectedString))
+            if (Lock(expectedData->lock) != LOCK_OK)
             {
-                result = 0;
+
             }
             else
             {
-                if (memcmp(expectedData->expectedString, data, size) == 0)
-                {
-                    expectedData->wasFound = true;
-                    result = 1;
-                }
-                else
+                if (size != strlen(expectedData->expectedString))
                 {
                     result = 0;
                 }
+                else
+                {
+                    if (memcmp(expectedData->expectedString, data, size) == 0)
+                    {
+                        expectedData->wasFound = true;
+                        result = 1;
+                    }
+                    else
+                    {
+                        result = 0;
+                    }
+                }
+                (void)Unlock(expectedData->lock);
             }
         }
         return result;
@@ -167,11 +183,22 @@ BEGIN_TEST_SUITE(serializer_e2e)
     static void RecvCallback(const void* buffer, size_t size, void* receiveCallbackContext)
     {
         EXPECTED_RECEIVE_DATA* expectedData = (EXPECTED_RECEIVE_DATA*)receiveCallbackContext;
-        if (size == expectedData->compareDataSize)
+        if (expectedData != NULL)
         {
-            if (memcmp(buffer, expectedData->compareData, size) == 0)
+            if (Lock(expectedData->lock) != LOCK_OK)
             {
-                expectedData->wasFound = true;
+
+            }
+            else
+            {
+                if (size == expectedData->compareDataSize)
+                {
+                    if (memcmp(buffer, expectedData->compareData, size) == 0)
+                    {
+                        expectedData->wasFound = true;
+                    }
+                }
+                (void)Unlock(expectedData->lock);
             }
         }
     }
@@ -474,8 +501,8 @@ BEGIN_TEST_SUITE(serializer_e2e)
 
         ///cleanup
         DESTROY_MODEL_INSTANCE(devModel);
-        RecvTestData_Destroy(g_recvMacroData);
         IoTHubClient_Destroy(iotHubClientHandle);
+        RecvTestData_Destroy(g_recvMacroData);
     }
 
     TEST_FUNCTION(IoTClient_AMQP_MacroSend_e2e)
