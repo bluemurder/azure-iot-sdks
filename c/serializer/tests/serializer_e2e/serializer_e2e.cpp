@@ -55,6 +55,7 @@ typedef struct _tagEXPECTED_SEND_DATA
     const char* expectedString;
     bool wasFound;
     bool dataWasSent;
+    LOCK_HANDLE lock; /*needed to protect this structure*/
 } EXPECTED_SEND_DATA;
 
 typedef struct _tagEXPECTED_RECEIVE_DATA
@@ -64,6 +65,7 @@ typedef struct _tagEXPECTED_RECEIVE_DATA
     const char* compareData;
     size_t compareDataSize;
     bool wasFound;
+    LOCK_HANDLE lock; /*needed to protect this structure*/
 } EXPECTED_RECEIVE_DATA;
 
 static EXPECTED_RECEIVE_DATA* g_recvMacroData;
@@ -71,12 +73,20 @@ static EXPECTED_RECEIVE_DATA* g_recvMacroData;
 // This is a Static function called from the macro
 EXECUTE_COMMAND_RESULT dataMacroCallback(deviceModel* device, ascii_char_ptr property1, int UniqueId)
 {
-    device;
+    (void)device;
     if (g_recvMacroData != NULL)
     {
-        if ( (g_uniqueTestId == (size_t)UniqueId) && (strcmp(g_recvMacroData->compareData, property1) == 0) )
+        if (Lock(g_recvMacroData->lock) != LOCK_OK)
         {
-            g_recvMacroData->wasFound = true;
+            ASSERT_FAIL("unable to lock");
+        }
+        else
+        {
+            if ( (g_uniqueTestId == (size_t)UniqueId) && (strcmp(g_recvMacroData->compareData, property1) == 0) )
+            {
+                g_recvMacroData->wasFound = true;
+            }
+            (void)Unlock(expectedData->lock);
         }
     }
     return EXECUTE_COMMAND_SUCCESS;
@@ -172,35 +182,45 @@ BEGIN_TEST_SUITE(serializer_e2e)
         result = (EXPECTED_RECEIVE_DATA*)malloc(sizeof(EXPECTED_RECEIVE_DATA));
         if (result != NULL)
         {
-            char temp[1000];
-            char* tempString;
-            result->wasFound = false;
-            time_t t = time(NULL);
-            (void)sprintf_s(temp, sizeof(temp), TEST_CMP_DATA_FMT, ctime(&t), g_uniqueTestId);
-            result->compareDataSize = strlen(temp);
-            tempString = (char*)malloc(result->compareDataSize+1);
-            if (tempString == NULL)
+            if ((result->lock = Lock_Init()) == NULL)
             {
                 free(result);
                 result = NULL;
             }
             else
             {
-                strcpy(tempString, temp);
-                result->compareData = tempString;
-                (void)sprintf_s(temp, sizeof(temp), TEST_RECV_DATA_FMT, ctime(&t), g_uniqueTestId);
-                tempString = (char*)malloc(strlen(temp) + 1);
+                char temp[1000];
+                char* tempString;
+                result->wasFound = false;
+                time_t t = time(NULL);
+                (void)sprintf_s(temp, sizeof(temp), TEST_CMP_DATA_FMT, ctime(&t), g_uniqueTestId);
+                result->compareDataSize = strlen(temp);
+                tempString = (char*)malloc(result->compareDataSize+1);
                 if (tempString == NULL)
                 {
-                    free((void*)result->compareData);
+                    (void)Lock_Deinit(result->lock);
                     free(result);
                     result = NULL;
                 }
                 else
                 {
                     strcpy(tempString, temp);
-                    result->toBeSendSize = strlen(tempString);
-                    result->toBeSend = tempString;
+                    result->compareData = tempString;
+                    (void)sprintf_s(temp, sizeof(temp), TEST_RECV_DATA_FMT, ctime(&t), g_uniqueTestId);
+                    tempString = (char*)malloc(strlen(temp) + 1);
+                    if (tempString == NULL)
+                    {
+                        (void)Lock_Deinit(result->lock);
+                        free((void*)result->compareData);
+                        free(result);
+                        result = NULL;
+                    }
+                    else
+                    {
+                        strcpy(tempString, temp);
+                        result->toBeSendSize = strlen(tempString);
+                        result->toBeSend = tempString;
+                    }
                 }
             }
         }
@@ -213,35 +233,44 @@ BEGIN_TEST_SUITE(serializer_e2e)
         result = (EXPECTED_RECEIVE_DATA*)malloc(sizeof(EXPECTED_RECEIVE_DATA));
         if (result != NULL)
         {
-            char* tempString;
-
-            result->wasFound = false;
-
-            tempString = (char*)malloc(TIME_DATA_LENGTH);
-            if (tempString == NULL)
+            if ((result->lock = Lock_Init()) == NULL)
             {
                 free(result);
                 result = NULL;
             }
             else
             {
-                time_t t = time(NULL);
-                (void)sprintf_s(tempString, TIME_DATA_LENGTH, "%.24s", ctime(&t) );
-                result->compareData = tempString;
-                result->compareDataSize = strlen(result->compareData);
-                size_t nLen = result->compareDataSize+strlen(TEST_MACRO_RECV_DATA_FMT)+4;
-                tempString = (char*)malloc(nLen);
+                char* tempString;
+                result->wasFound = false;
+
+                tempString = (char*)malloc(TIME_DATA_LENGTH);
                 if (tempString == NULL)
                 {
-                    free((void*)result->compareData);
+                    (void)Lock_Deinit(result->lock);
                     free(result);
                     result = NULL;
                 }
                 else
                 {
-                    (void)sprintf_s(tempString, nLen, TEST_MACRO_RECV_DATA_FMT, result->compareData, g_uniqueTestId);
-                    result->toBeSendSize = strlen(tempString);
-                    result->toBeSend = tempString;
+                    time_t t = time(NULL);
+                    (void)sprintf_s(tempString, TIME_DATA_LENGTH, "%.24s", ctime(&t) );
+                    result->compareData = tempString;
+                    result->compareDataSize = strlen(result->compareData);
+                    size_t nLen = result->compareDataSize+strlen(TEST_MACRO_RECV_DATA_FMT)+4;
+                    tempString = (char*)malloc(nLen);
+                    if (tempString == NULL)
+                    {
+                        (void)Lock_Deinit(result->lock);
+                        free((void*)result->compareData);
+                        free(result);
+                        result = NULL;
+                    }
+                    else
+                    {
+                        (void)sprintf_s(tempString, nLen, TEST_MACRO_RECV_DATA_FMT, result->compareData, g_uniqueTestId);
+                        result->toBeSendSize = strlen(tempString);
+                        result->toBeSend = tempString;
+                    }
                 }
             }
         }
@@ -252,6 +281,7 @@ BEGIN_TEST_SUITE(serializer_e2e)
     {
         if (data != NULL)
         {
+            (void)Lock_Deinit(data->lock);
             if (data->compareData != NULL)
             {
                 free((void*)(data->compareData));
@@ -269,21 +299,30 @@ BEGIN_TEST_SUITE(serializer_e2e)
         EXPECTED_SEND_DATA* result = (EXPECTED_SEND_DATA*)malloc(sizeof(EXPECTED_SEND_DATA));
         if (result != NULL)
         {
-            char temp[1000];
-            char* tempString;
-            time_t t = time(NULL);
-            sprintf(temp, TEST_SEND_DATA_FMT, ctime(&t), g_uniqueTestId);
-            if ((tempString = (char*)malloc(strlen(temp) + 1)) == NULL)
+            if ((result->lock = Lock_Init()) == NULL)
             {
                 free(result);
                 result = NULL;
             }
             else
             {
-                strcpy(tempString, temp);
-                result->expectedString = tempString;
-                result->wasFound = false;
-                result->dataWasSent = false;
+                char temp[1000];
+                char* tempString;
+                time_t t = time(NULL);
+                sprintf(temp, TEST_SEND_DATA_FMT, ctime(&t), g_uniqueTestId);
+                if ((tempString = (char*)malloc(strlen(temp) + 1)) == NULL)
+                {
+                    Lock_Deinit(result->lock);
+                    free(result);
+                    result = NULL;
+                }
+                else
+                {
+                    strcpy(tempString, temp);
+                    result->expectedString = tempString;
+                    result->wasFound = false;
+                    result->dataWasSent = false;
+                }
             }
         }
         return result;
@@ -294,20 +333,29 @@ BEGIN_TEST_SUITE(serializer_e2e)
         EXPECTED_SEND_DATA* result = (EXPECTED_SEND_DATA*)malloc(sizeof(EXPECTED_SEND_DATA));
         if (result != NULL)
         {
-            char temp[1000];
-            char* tempString;
-            sprintf(temp, TEST_MACRO_CMP_DATA_FMT, g_uniqueTestId, pszTime);
-            if ((tempString = (char*)malloc(strlen(temp) + 1)) == NULL)
+            if ((result->lock = Lock_Init()) == NULL)
             {
                 free(result);
                 result = NULL;
             }
             else
             {
-                strcpy(tempString, temp);
-                result->expectedString = tempString;
-                result->wasFound = false;
-                result->dataWasSent = false;
+                char temp[1000];
+                char* tempString;
+                sprintf(temp, TEST_MACRO_CMP_DATA_FMT, g_uniqueTestId, pszTime);
+                if ((tempString = (char*)malloc(strlen(temp) + 1)) == NULL)
+                {
+                    Lock_Deinit(result->lock);
+                    free(result);
+                    result = NULL;
+                }
+                else
+                {
+                    strcpy(tempString, temp);
+                    result->expectedString = tempString;
+                    result->wasFound = false;
+                    result->dataWasSent = false;
+                }
             }
         }
         return result;
@@ -317,6 +365,7 @@ BEGIN_TEST_SUITE(serializer_e2e)
     {
         if (data != NULL)
         {
+            (void)Lock_Deinit(data->lock);
             if (data->expectedString != NULL)
             {
                 free((void*)data->expectedString);
