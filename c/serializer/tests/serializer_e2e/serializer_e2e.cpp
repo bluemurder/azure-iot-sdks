@@ -129,18 +129,21 @@ BEGIN_TEST_SUITE(serializer_e2e)
     {
         (void)result;
         EXPECTED_SEND_DATA* expectedData = (EXPECTED_SEND_DATA*)userContextCallback;
-        if (Lock(expectedData->lock) != LOCK_OK)
+        if (expectedData != NULL)
         {
-            ASSERT_FAIL("unable to lock");
-        }
-        else
-        {
-            if (expectedData != NULL)
+            if (Lock(expectedData->lock) != LOCK_OK)
             {
-                expectedData->dataWasSent = true;
+                ASSERT_FAIL("unable to lock");
             }
-            (void)Unlock(expectedData->lock);
-            //printf("was sent: %s\n", expectedData->expectedString);
+            else
+            {
+                if (expectedData != NULL)
+                {
+                    expectedData->dataWasSent = true;
+                }
+                (void)Unlock(expectedData->lock);
+                //printf("was sent: %s\n", expectedData->expectedString);
+            }
         }
     }
 
@@ -153,7 +156,7 @@ BEGIN_TEST_SUITE(serializer_e2e)
         {
             if (Lock(expectedData->lock) != LOCK_OK)
             {
-
+                ASSERT_FAIL("unable to lock");
             }
             else
             {
@@ -512,6 +515,7 @@ BEGIN_TEST_SUITE(serializer_e2e)
         IOTHUB_CLIENT_HANDLE iotHubClientHandle;
         deviceModel* devModel;
         time_t beginOperation, nowTime;
+        bool continue_run = true;
 
         iotHubConfig.iotHubName = IoTHubAccount_GetIoTHubName(g_iothubAcctInfo);
         iotHubConfig.iotHubSuffix = IoTHubAccount_GetIoTHubSuffix(g_iothubAcctInfo);
@@ -552,14 +556,24 @@ BEGIN_TEST_SUITE(serializer_e2e)
             IoTHubMessage_Destroy(iothubMessageHandle);
             // Wait til the data gets sent to the callback
             beginOperation = time(NULL);
+            continue_run = true;
             while (
-                  (
-                      (nowTime = time(NULL)),
-                      (difftime(nowTime, beginOperation) < MAX_CLOUD_TRAVEL_TIME) //time box
-                  ) &&
-                      (!expectedData->dataWasSent)
-                  ) //condition box
+                ( (nowTime = time(NULL)),
+                (difftime(nowTime, beginOperation) < MAX_CLOUD_TRAVEL_TIME) ) && //time box
+                continue_run)
             {
+                if (Lock(expectedData->lock) != LOCK_OK)
+                {
+                    ASSERT_FAIL("unable to lock");
+                }
+                else
+                {
+                    if (expectedData->dataWasSent)
+                    {
+                        continue_run = false;
+                    }
+                    (void)Unlock(expectedData->lock);
+                }
                 ThreadAPI_Sleep(100);
             }
         }
@@ -578,18 +592,27 @@ BEGIN_TEST_SUITE(serializer_e2e)
         }
 
         // Sent Send is Async we need to make sure all the Data has been sent
+        continue_run = true;
         beginOperation = time(NULL);
         while (
-                (
-                    (nowTime = time(NULL)),
-                    (difftime(nowTime, beginOperation) < MAX_CLOUD_TRAVEL_TIME) //time box
-                ) &&
-                    (!expectedData->wasFound)
-                ) //condition box
+            ( (nowTime = time(NULL)),
+            (difftime(nowTime, beginOperation) < MAX_CLOUD_TRAVEL_TIME) ) && //time box
+            continue_run)
         {
+            if (expectedData->lock)
+            {
+                ASSERT_FAIL("unable to lock");
+            }
+            else
+            {
+                if (expectedData->wasFound)
+                {
+                    continue_run = false;
+                }
+                (void)Unlock(expectedData->lock);
+            }
             ThreadAPI_Sleep(100);
         }
-
         ASSERT_IS_TRUE(expectedData->wasFound); // was found is written by the callback...
 
         ///cleanup
