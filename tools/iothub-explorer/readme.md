@@ -1,5 +1,7 @@
 #iothub-explorer
-A sample CLI tool to manage device clients using the Azure IoT Hub service SDK. The tool enables you to manage the devices in the identity register, monitor device-to-cloud messages, and send cloud-to-device commands.
+A CLI tool to manage device identities in your IoT Hub registry, send and receive messages and files from your devices, and monitor your IoT hub operations.
+
+**iothub-explorer** also now incorporates a feature that lets you simulate a device connected to your IoT Hub instance.
 
 [![npm version](https://badge.fury.io/js/iothub-explorer.svg)](https://badge.fury.io/js/iothub-explorer)
 
@@ -8,20 +10,75 @@ A sample CLI tool to manage device clients using the Azure IoT Hub service SDK. 
 
 > Note: This tool requires Node.js version 4.x or higher for all features to work.
 
-To install the latest (pre-release) version of the *iothub-explorer* tool, run the following command in your command-line environment:
+To install the latest version of the **iothub-explorer** tool, run the following command in your command-line environment:
 
-```
-npm install -g iothub-explorer@latest
+```shell
+npm install -g iothub-explorer
 ```
 
-You can use the following command to get additional help about all the iothub-explorer commands and their parameters:
+You can use the following command to get additional help about all the **iothub-explorer** commands:
 
 ```shell
 $ iothub-explorer help
+
+  Usage: iothub-explorer [options] <command> [command-options] [command-args]
+         iothub-explorer help <command> will print command-specific help
+
+
+  Commands:
+
+    login                           Start a session on your IoT Hub
+    logout                          Terminate the current temporary session on your IoT Hub
+    list                            List the device identities currently in your IoT Hub device registry
+    create <device-id|device-json>  Create a device identity in your IoT Hub device registry
+    delete <device-id>              Delete a device identity from your IoT Hub device registry
+    get <device-id>                 Get a device identity from your IoT Hub device registry
+    import-devices                  Import device identities in bulk: local file -> azure blob storage -> iothub
+    export-devices                  Export device identities in bulk: iothub -> azure blob storage -> local file
+    send <device-id> <message>      Sends a message to device (cloud-to-device/C2D)
+    monitor-feedback                Monitor feedback sent by devices to acknowledge cloud-to-device (C2D) messages.
+    monitor-events [device-id]      Listens to events coming from devices (or one in particular).
+    monitor-uploads                 Monitor the file upload notifications endpoint
+    monitor-ops                     Listens to the operations monitoring endpoint of your IoT Hub instance
+    sas-token <device-id>           Generates a SAS Token for the given device
+    simulate-device <device-id>     Simulates a device with the specified id.
+    help [cmd]                      display help for [cmd]
+
+  Options:
+
+    -h, --help     output usage information
+    -V, --version  output the version number
 ```
 
+Each **iothub-explorer** command has its own help that can be viewed by passing `help` the command name:
+
+```shell
+$ iothub-explorer help create
+
+  Usage: iothub-explorer-create [options] [device-id|device-json]
+
+  Create a device identity in your IoT Hub device registry, either using the specified device id or JSON description.
+
+  Options:
+
+    -h, --help                       output usage information
+    -a, --auto                       Creates a device with an auto-generated device id
+    -cs, --connection-string         Show the connection string for the newly created device.
+    -d, --display <property-filter>  Comma-separated list of device properties that should be displayed.
+    -l, --login <connection-string>  Connection string to use to authenticate with your IoT Hub instance.
+    -k1, --key1 <key>                Specifies the primary key for newly created device.
+    -k2, --key2 <key>                Specifies the secondary key for newly created device.
+    -r, --raw                        Use this flag to return raw JSON instead of pretty-printed output.
+    -x, --x509                       Generates an x509 certificate to authenticate the device.
+    -dv, --daysValid                 Number of days the x509 certificate should be valid for
+    -t1, --thumbprint1 <thumbprint>  Specifies the primary thumbprint of the x509 certificate.
+    -t2, --thumbprint2 <thumbprint>  Specifies the secondary thumbprint of the x509 certificate.
+
+```
+
+## Examples
 <a name="identityregistry"/>
-## Working with the device identity registry
+### Working with the device identity registry
 
 Supply your IoT Hub connection string once using the **login** command. This means you do not need to supply the connection string for subsequent commands for the duration of the session (defaults to one hour):
 
@@ -66,12 +123,12 @@ $ iothub-explorer delete existing-device
 ```
 
 <a name="devices"/>
-## Working with devices
+### Working with devices
 
 Use the following command to monitor the device-to-cloud messages from a device:
 
 ```shell
-$ iothub-explorer 'HostName=<my-hub>.azure-devices.net;SharedAccessKeyName=<my-policy>;SharedAccessKey=<my-policy-key>' monitor-events myFirstDevice              
+$ iothub-explorer monitor-events myFirstDevice --login 'HostName=<my-hub>.azure-devices.net;SharedAccessKeyName=<my-policy>;SharedAccessKey=<my-policy-key>'
 
 Monitoring events from device myFirstDevice
 Listening on endpoint iothub-ehub-<my-endpoint>/ConsumerGroups/$Default/Partitions/0 start time: 1453821103646
@@ -98,7 +155,7 @@ $ iothub-explorer send myFirstDevice MyMessage --ack=full
 
 Message sent (id: 13bc1852-eeb4-4611-b0bd-329d80c83f6f)
 
-$ iothub-explorer receive myFirstDevice
+$ iothub-explorer monitor-feedback myFirstDevice
 
 Waiting for feedback... (Ctrl-C to quit)
 
